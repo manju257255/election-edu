@@ -1,52 +1,57 @@
-const phases = [
-  { name: 'Schedule review', start: 0, span: 10, detail: 'Administrative review, dates, phases, and security planning.' },
-  { name: 'Announcement', start: 9, span: 5, detail: 'Election dates are announced and the MCC begins.' },
-  { name: 'Roll updates', start: 4, span: 28, detail: 'Voter list checks, claims, objections, and corrections continue.' },
-  { name: 'Nomination filing', start: 23, span: 12, detail: 'Candidates file forms, affidavits, and deposits.' },
-  { name: 'Scrutiny', start: 34, span: 5, detail: 'Officials review nomination papers and eligibility.' },
-  { name: 'Campaigning', start: 36, span: 46, detail: 'Manifestos, public meetings, outreach, and voter awareness.' },
-  { name: 'Silent period', start: 78, span: 4, detail: 'Campaigning pauses shortly before polling.' },
-  { name: 'Polling phases', start: 82, span: 32, detail: 'Voting happens across scheduled phases and constituencies.' },
-  { name: 'Counting and results', start: 120, span: 14, detail: 'Postal ballots, EVM totals, VVPAT checks, and result declaration.' },
-];
+import { Calendar, Clock } from 'lucide-react';
+import PropTypes from 'prop-types';
+import { timelineEvents } from '../data/timelineEvents';
 
+/**
+ * Timeline component for visualizing the election schedule.
+ */
 export default function Timeline() {
   return (
-    <section className="mx-auto max-w-6xl">
-      <div className="mb-6">
+    <section className="mx-auto max-w-4xl">
+      <div className="mb-8">
         <h2 className="font-serif text-4xl text-[#e8e8e8]">Election timeline</h2>
-        <p className="mt-2 text-sm leading-6 text-[#888]">A five-month cycle showing how major phases overlap.</p>
+        <p className="mt-2 text-sm leading-6 text-[#888]">Standard sequence of events from announcement to results.</p>
       </div>
 
-      <div className="overflow-x-auto rounded-lg bg-[#111] p-4 ring-1 ring-white/10">
-        <div className="min-w-[820px]">
-          <div className="mb-4 grid grid-cols-5 text-xs font-semibold uppercase text-[#888]">
-            {['Month 1', 'Month 2', 'Month 3', 'Month 4', 'Month 5'].map((label) => (
-              <div key={label}>{label}</div>
-            ))}
-          </div>
-          <div className="space-y-3">
-            {phases.map((phase) => (
-              <div key={phase.name} className="grid grid-cols-[170px_1fr] items-center gap-4">
-                <span className="text-sm font-medium text-[#cfcfcf]">{phase.name}</span>
-                <div className="relative h-9 rounded-md bg-[#1a1a1a]">
-                  <div
-                    tabIndex={0}
-                    role="img"
-                    aria-label={`${phase.name}: ${phase.detail}`}
-                    className="group absolute top-1/2 h-5 -translate-y-1/2 rounded bg-[#4ade80] transition hover:brightness-110 focus-visible:brightness-110"
-                    style={{ left: `${phase.start / 1.5}%`, width: `${phase.span / 1.5}%` }}
-                  >
-                    <span className="pointer-events-none absolute bottom-8 left-1/2 z-20 hidden w-56 -translate-x-1/2 rounded-md bg-[#0a0a0a] p-3 text-xs leading-5 text-[#e8e8e8] ring-1 ring-white/10 group-hover:block group-focus-visible:block">
-                      {phase.detail}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+      <div className="relative space-y-8 before:absolute before:left-[19px] before:top-2 before:h-[calc(100%-16px)] before:w-0.5 before:bg-white/5">
+        {timelineEvents.map((event) => (
+          <TimelineEvent key={event.id} event={event} />
+        ))}
       </div>
     </section>
   );
 }
+
+/**
+ * Timeline Event component.
+ */
+function TimelineEvent({ event }) {
+  return (
+    <article className="relative pl-12">
+      <div className="absolute left-0 top-1.5 z-10 grid h-10 w-10 place-items-center rounded-full bg-[#0a0a0a] ring-1 ring-white/10">
+        <Calendar className="text-[#4ade80]" size={18} aria-hidden="true" />
+      </div>
+      <div className="rounded-lg bg-[#111] p-5 ring-1 ring-white/10 transition hover:ring-white/20">
+        <div className="mb-2 flex flex-wrap items-center gap-3">
+          <span className="text-xs font-bold uppercase tracking-widest text-[#4ade80]">{event.period}</span>
+          <div className="flex items-center gap-1.5 text-xs text-[#666]">
+            <Clock size={12} aria-hidden="true" />
+            <span>{event.duration}</span>
+          </div>
+        </div>
+        <h3 className="text-lg font-semibold text-[#e8e8e8]">{event.title}</h3>
+        <p className="mt-2 text-sm leading-6 text-[#bdbdbd]">{event.description}</p>
+      </div>
+    </article>
+  );
+}
+
+TimelineEvent.propTypes = {
+  event: PropTypes.shape({
+    id: PropTypes.string.isRequired,
+    period: PropTypes.string.isRequired,
+    duration: PropTypes.string.isRequired,
+    title: PropTypes.string.isRequired,
+    description: PropTypes.string.isRequired,
+  }).isRequired,
+};

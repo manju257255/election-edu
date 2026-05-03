@@ -1,8 +1,11 @@
-import { FileUp, Send, Trash2 } from 'lucide-react';
+import { FileUp, Languages, Send, Trash2 } from 'lucide-react';
 import { ref, uploadBytes } from 'firebase/storage';
-import { useEffect, useRef, useState } from 'react';
-import { storage } from '../firebase';
-import { askGemini, SYSTEM_PROMPT } from '../gemini';
+import PropTypes from 'prop-types';
+import React, { useEffect, useRef, useState } from 'react';
+import { storage, trackEvent } from '../firebase';
+import { askGemini, MAX_USER_MESSAGES_PER_SESSION } from '../gemini';
+import { sanitizeChatInput } from '../utils/sanitize';
+import { translateText } from '../utils/translate';
 
 const states = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana',
@@ -14,10 +17,14 @@ const states = [
 
 const goals = ['Voter Registration', 'How EVMs work', 'Understanding results', 'General'];
 
+/**
+ * Chat component for interacting with the election assistant.
+ */
 export default function Chat({ user, profile, messages, onSaveProfile, onSaveMessages, onClearChat, loading }) {
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
+  const [lang, setLang] = useState('en'); // 'en' or 'hi'
   const [onboarding, setOnboarding] = useState({
     isFirstTime: true,
     state: 'Maharashtra',
@@ -35,8 +42,21 @@ export default function Chat({ user, profile, messages, onSaveProfile, onSaveMes
   }
 
   async function sendMessage(contentOverride) {
-    const content = (contentOverride || draft).trim();
+    const content = sanitizeChatInput(contentOverride || draft);
     if (!content || pending || !profile) {
+      return;
+    }
+
+    const currentUserMessageCount = messages.filter((message) => message.role === 'user').length;
+    if (currentUserMessageCount >= MAX_USER_MESSAGES_PER_SESSION) {
+      const limitMessage = {
+        role: 'assistant',
+        content: 'Message limit reached for this session. Use Clear chat to start a new session.',
+        createdAt: Date.now(),
+        error: true,
+      };
+      await onSaveMessages([...messages, limitMessage]);
+      setDraft('');
       return;
     }
 
@@ -49,9 +69,16 @@ export default function Chat({ user, profile, messages, onSaveProfile, onSaveMes
       const history = nextMessages
         .filter((message) => !message.error && message.kind !== 'welcome')
         .map(({ role, content: messageContent }) => ({ role, content: messageContent }));
-      const reply = await askGemini(history, SYSTEM_PROMPT(profile));
+      
+      let reply = await askGemini(history, profile);
+      
+      if (lang === 'hi') {
+        reply = await translateText(reply, 'hi');
+      }
+
       await onSaveMessages([...nextMessages, { role: 'assistant', content: reply, createdAt: Date.now() }]);
-    } catch {
+    } catch (err) {
+      console.error('Chat error:', err);
       const errorMessage = 'Could not get a response. Check your API key or try again.';
       await onSaveMessages([...nextMessages, { role: 'assistant', content: errorMessage, createdAt: Date.now(), error: true }]);
     } finally {
@@ -77,8 +104,10 @@ export default function Chat({ user, profile, messages, onSaveProfile, onSaveMes
       const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       await uploadBytes(ref(storage, `uploads/${user.uid}/${Date.now()}-${safeName}`), file);
       setUploadStatus('Document stored securely.');
-    } catch {
-      setUploadStatus('Document upload is unavailable until Firebase Storage is configured.');
+      trackEvent('document_uploaded', { file_name: safeName });
+    } catch (err) {
+      console.error('Upload error:', err);
+      setUploadStatus('Document upload is unavailable.');
     } finally {
       event.target.value = '';
     }
@@ -147,23 +176,31 @@ export default function Chat({ user, profile, messages, onSaveProfile, onSaveMes
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={() => {
-              onClearChat();
-            }}
+            onClick={() => setLang(l => l === 'en' ? 'hi' : 'en')}
+            className={`inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm font-semibold ring-1 ring-white/10 ${lang === 'hi' ? 'bg-[#4ade80] text-[#0a0a0a]' : 'bg-[#1a1a1a] text-[#e8e8e8]'}`}
+            aria-label="Toggle language to Hindi"
+          >
+            <Languages size={16} aria-hidden="true" />
+            {lang === 'en' ? 'English' : 'Hindi'}
+          </button>
+          <button
+            type="button"
+            onClick={onClearChat}
             className="inline-flex h-10 items-center gap-2 rounded-md bg-[#1a1a1a] px-3 text-sm font-semibold text-[#e8e8e8] ring-1 ring-white/10"
+            aria-label="Clear chat session"
           >
             <Trash2 size={16} aria-hidden="true" />
-            Clear chat
+            Clear
           </button>
           <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-md bg-[#1a1a1a] px-3 text-sm font-semibold text-[#e8e8e8] ring-1 ring-white/10">
             <FileUp size={16} aria-hidden="true" />
-            Upload document
+            Upload
             <input type="file" className="sr-only" onChange={uploadDocument} />
           </label>
         </div>
       </div>
 
-      <div className="scrollbar-thin overflow-y-auto p-4">
+      <div className="scrollbar-thin overflow-y-auto p-4" aria-live="polite">
         <div className="space-y-4">
           {messages.map((message, index) => (
             <MessageGroup
@@ -185,24 +222,48 @@ export default function Chat({ user, profile, messages, onSaveProfile, onSaveMes
       </div>
 
       <div className="border-t border-white/10 p-4">
-        {uploadStatus ? <p className="mb-2 text-sm text-[#888]">{uploadStatus}</p> : null}
-        <div className="flex gap-2">
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Ask about voter registration, EVMs, NOTA, counting, MCC..."
-            rows={2}
-            className="max-h-36 min-h-12 flex-1 resize-y rounded-md border border-white/10 bg-[#161616] p-3 text-sm leading-6 text-[#e8e8e8] placeholder:text-[#888]"
-          />
-          <button type="button" onClick={sendMessage} disabled={pending || !draft.trim()} className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-[#4ade80] text-[#0a0a0a] disabled:cursor-not-allowed disabled:opacity-40" aria-label="Send message">
-            <Send size={18} aria-hidden="true" />
-          </button>
+        {uploadStatus ? <p className="mb-2 text-sm text-[#888]" role="status">{uploadStatus}</p> : null}
+        <div className="relative flex flex-col gap-2">
+          <div className="flex gap-2">
+            <label className="sr-only" htmlFor="chat-input">Type your question</label>
+            <textarea
+              id="chat-input"
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask about voter registration, EVMs, NOTA, counting, MCC..."
+              rows={2}
+              maxLength={500}
+              className="max-h-36 min-h-12 flex-1 resize-y rounded-md border border-white/10 bg-[#161616] p-3 text-sm leading-6 text-[#e8e8e8] placeholder:text-[#888]"
+            />
+            <button
+              type="button"
+              onClick={() => sendMessage()}
+              disabled={pending || !draft.trim()}
+              className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-[#4ade80] text-[#0a0a0a] disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="Send message"
+            >
+              <Send size={18} aria-hidden="true" />
+            </button>
+          </div>
+          <div className="text-right text-[10px] text-[#666]">
+            {draft.length}/500
+          </div>
         </div>
       </div>
     </section>
   );
 }
+
+Chat.propTypes = {
+  user: PropTypes.object,
+  profile: PropTypes.object,
+  messages: PropTypes.array.isRequired,
+  onSaveProfile: PropTypes.func.isRequired,
+  onSaveMessages: PropTypes.func.isRequired,
+  onClearChat: PropTypes.func.isRequired,
+  loading: PropTypes.bool,
+};
 
 function MessageGroup({ message, onSendSuggestion, disabled }) {
   const { body, suggestion } = splitSuggestion(message.content);
@@ -235,6 +296,12 @@ function MessageGroup({ message, onSendSuggestion, disabled }) {
     </article>
   );
 }
+
+MessageGroup.propTypes = {
+  message: PropTypes.object.isRequired,
+  onSendSuggestion: PropTypes.func.isRequired,
+  disabled: PropTypes.bool,
+};
 
 function splitSuggestion(content) {
   const match = content.match(/\s*Next:\s*([\s\S]+?)\s*$/);

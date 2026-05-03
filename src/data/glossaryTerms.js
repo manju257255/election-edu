@@ -15,3 +15,16 @@ export const glossaryTerms = [
   { term: 'Anti-defection Law', badge: 'Tenth', definition: 'The anti-defection law discourages elected members from switching parties in specified situations. It can lead to disqualification under the Tenth Schedule.' },
   { term: 'By-election', badge: 'Bypoll', definition: 'A by-election fills a seat that becomes vacant before the normal term ends. It is held for that constituency rather than the whole state or country.' },
 ];
+
+export function filterGlossaryTerms(query, terms = glossaryTerms) {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) {
+    return terms;
+  }
+
+  return terms.filter((item) => {
+    const text = `${item.term} ${item.badge} ${item.definition}`.toLowerCase();
+    return text.includes(normalizedQuery);
+  });
+}

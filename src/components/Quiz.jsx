@@ -1,10 +1,14 @@
 import { Check, RotateCcw } from 'lucide-react';
 import { arrayUnion, doc, getDoc, setDoc } from 'firebase/firestore';
-import { useEffect, useMemo, useState } from 'react';
-import { db } from '../firebase';
+import PropTypes from 'prop-types';
+import React, { useEffect, useMemo, useState } from 'react';
+import { db, trackEvent } from '../firebase';
 import { askGemini } from '../gemini';
-import { fallbackQuizQuestions, parseQuizQuestions } from '../data/quizQuestions';
+import { calculateQuizScore, fallbackQuizQuestions, parseQuizQuestions } from '../data/quizQuestions';
 
+/**
+ * Quiz component for testing election knowledge.
+ */
 export default function Quiz({ user, profile }) {
   const [questions, setQuestions] = useState([]);
   const [current, setCurrent] = useState(0);
@@ -14,7 +18,7 @@ export default function Quiz({ user, profile }) {
   const [saving, setSaving] = useState(false);
   const [bestScore, setBestScore] = useState(null);
 
-  const score = useMemo(() => answers.filter((answer) => answer.correct).length, [answers]);
+  const score = useMemo(() => calculateQuizScore(answers), [answers]);
   const complete = questions.length > 0 && answers.length === questions.length;
 
   useEffect(() => {
@@ -31,11 +35,12 @@ export default function Quiz({ user, profile }) {
         }
 
         const prompt = `Generate exactly 8 multiple choice questions about the Indian election process for state "${profile?.state || 'India'}" and learning goal "${profile?.goal || 'General'}". Return JSON only in this schema: [{"question":"...","options":["A","B","C","D"],"answerIndex":0,"explanation":"..."}]. The answerIndex must be 0, 1, 2, or 3.`;
-        const response = await askGemini([{ role: 'user', content: prompt }], 'Return only valid JSON. Do not include markdown, headings, comments, or prose. The response must be a JSON array of 8 quiz question objects.');
+        const response = await askGemini([{ role: 'user', content: prompt }], profile);
         if (active) {
           setQuestions(parseQuizQuestions(response));
         }
-      } catch {
+      } catch (err) {
+        console.error('Quiz load error:', err);
         if (active) {
           setQuestions(fallbackQuizQuestions);
         }
@@ -52,6 +57,9 @@ export default function Quiz({ user, profile }) {
     };
   }, [profile?.goal, profile?.state, user?.uid]);
 
+  /**
+   * Records the user's choice and updates state.
+   */
   async function chooseAnswer(index) {
     if (selected !== null || complete) {
       return;
@@ -63,29 +71,18 @@ export default function Quiz({ user, profile }) {
     setSelected(index);
     setAnswers(nextAnswers);
 
-    if (nextAnswers.length === questions.length && user?.uid) {
-      setSaving(true);
-      try {
-        const finalScore = nextAnswers.filter((answer) => answer.correct).length;
-        const nextBest = Math.max(bestScore ?? 0, finalScore);
-        const scorePayload = {
-          uid: user.uid,
-          bestScore: nextBest,
-          scores: arrayUnion({
-            score: finalScore,
-            total: questions.length,
-            state: profile?.state || '',
-            learningGoal: profile?.goal || 'General',
-            createdAt: new Date().toISOString(),
-          }),
-        };
-        await setDoc(doc(db, 'quizScores', user.uid), scorePayload, { merge: true });
-        setBestScore(nextBest);
-      } catch {
-        window.setTimeout(() => {
-          const finalScore = nextAnswers.filter((answer) => answer.correct).length;
+    if (nextAnswers.length === questions.length) {
+      const finalScore = calculateQuizScore(nextAnswers);
+      trackEvent('quiz_completed', { 
+        score: finalScore, 
+        state: profile?.state || 'India' 
+      });
+
+      if (user?.uid) {
+        setSaving(true);
+        try {
           const nextBest = Math.max(bestScore ?? 0, finalScore);
-          setDoc(doc(db, 'quizScores', user.uid), {
+          const scorePayload = {
             uid: user.uid,
             bestScore: nextBest,
             scores: arrayUnion({
@@ -95,10 +92,14 @@ export default function Quiz({ user, profile }) {
               learningGoal: profile?.goal || 'General',
               createdAt: new Date().toISOString(),
             }),
-          }, { merge: true }).catch(() => {});
-        }, 2000);
-      } finally {
-        setSaving(false);
+          };
+          await setDoc(doc(db, 'quizScores', user.uid), scorePayload, { merge: true });
+          setBestScore(nextBest);
+        } catch (err) {
+          console.error('Score save error:', err);
+        } finally {
+          setSaving(false);
+        }
       }
     }
   }
@@ -133,12 +134,12 @@ export default function Quiz({ user, profile }) {
       </div>
 
       <div className="rounded-lg bg-[#111] p-5 ring-1 ring-white/10">
-        <div className="mb-5 h-2 rounded-full bg-[#1a1a1a]">
+        <div className="mb-5 h-2 rounded-full bg-[#1a1a1a]" role="progressbar" aria-valuenow={progress} aria-valuemin="0" aria-valuemax="100">
           <div className="h-full rounded-full bg-[#4ade80]" style={{ width: `${progress}%` }} />
         </div>
 
         {complete ? (
-          <div className="text-center">
+          <div className="text-center" role="status">
             <p className="font-serif text-5xl text-[#e8e8e8]">{score}/8</p>
             <p className="mt-3 text-sm leading-6 text-[#888]">{saving ? 'Saving your score.' : 'Score saved to your progress history.'}</p>
             <button type="button" onClick={restart} className="mt-6 inline-flex h-10 items-center gap-2 rounded-md bg-[#4ade80] px-4 text-sm font-semibold text-[#0a0a0a]">
@@ -150,7 +151,7 @@ export default function Quiz({ user, profile }) {
           <>
             <p className="mb-2 text-sm font-semibold text-[#4ade80]">Question {current + 1} of {questions.length}</p>
             <h3 className="text-xl font-semibold leading-8 text-[#e8e8e8]">{question.question}</h3>
-            <div className="mt-5 grid gap-3">
+            <div className="mt-5 grid gap-3" role="radiogroup">
               {question.options.map((option, index) => {
                 const isSelected = selected === index;
                 const isCorrect = question.answerIndex === index;
@@ -169,6 +170,7 @@ export default function Quiz({ user, profile }) {
                             : 'bg-[#161616] text-[#888] ring-white/10'
                     }`}
                     disabled={selected !== null}
+                    aria-label={`${option}${isSelected ? ' (Your choice)' : ''}${selected !== null && isCorrect ? ' (Correct answer)' : ''}`}
                   >
                     <span>{option}</span>
                     {selected !== null && isCorrect ? <Check size={16} aria-hidden="true" /> : null}
@@ -177,9 +179,9 @@ export default function Quiz({ user, profile }) {
               })}
             </div>
             {selected !== null ? (
-              <div className="mt-5 rounded-md bg-[#1a1a1a] p-4 text-sm leading-6 text-[#cfcfcf]">
-                {question.explanation}
-                <button type="button" onClick={nextQuestion} className="mt-4 block h-10 rounded-md bg-[#4ade80] px-4 font-semibold text-[#0a0a0a]">
+              <div className="mt-5 rounded-md bg-[#1a1a1a] p-4 text-sm leading-6 text-[#cfcfcf]" role="status">
+                <p className="mb-4">{question.explanation}</p>
+                <button type="button" onClick={nextQuestion} className="h-10 rounded-md bg-[#4ade80] px-4 font-semibold text-[#0a0a0a]">
                   Next question
                 </button>
               </div>
@@ -190,3 +192,8 @@ export default function Quiz({ user, profile }) {
     </section>
   );
 }
+
+Quiz.propTypes = {
+  user: PropTypes.object,
+  profile: PropTypes.object,
+};

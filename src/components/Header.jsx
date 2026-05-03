@@ -1,52 +1,60 @@
-import { BarChart3, BookOpenText, GraduationCap, Map, MessageSquareText, Timer } from 'lucide-react';
+import { BarChart3, BookOpen, Calendar, Layout, Map, MessageSquare } from 'lucide-react';
+import PropTypes from 'prop-types';
+import { trackEvent } from '../firebase';
 
 const tabs = [
-  { id: 'chat', label: 'Assistant', icon: MessageSquareText },
+  { id: 'chat', label: 'Assistant', icon: MessageSquare },
   { id: 'journey', label: 'Journey', icon: Map },
-  { id: 'timeline', label: 'Timeline', icon: Timer },
-  { id: 'glossary', label: 'Glossary', icon: BookOpenText },
-  { id: 'quiz', label: 'Quiz', icon: GraduationCap },
+  { id: 'timeline', label: 'Timeline', icon: Calendar },
+  { id: 'glossary', label: 'Glossary', icon: BookOpen },
+  { id: 'quiz', label: 'Quiz', icon: Layout },
   { id: 'dashboard', label: 'Progress', icon: BarChart3 },
 ];
 
+/**
+ * Header component with navigation tabs.
+ */
 export default function Header({ activeTab, onTabChange }) {
-  return (
-    <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0a0a0a]/95 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase text-[#4ade80]">Indian civic learning</p>
-            <h1 className="font-serif text-4xl leading-none text-[#e8e8e8] sm:text-5xl">ElectionEdu</h1>
-          </div>
-          <div className="hidden max-w-md text-right text-sm leading-6 text-[#888] md:block">
-            Learn the process, test your understanding, and ask election questions with state-aware guidance.
-          </div>
-        </div>
+  const handleTabChange = (tabId) => {
+    onTabChange(tabId);
+    trackEvent('tab_switched', { tab_id: tabId });
+  };
 
-        <nav aria-label="Primary" className="overflow-x-auto pb-1">
-          <div className="flex min-w-max gap-2">
-            {tabs.map(({ id, label, icon: Icon }) => {
-              const active = activeTab === id;
-              return (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => onTabChange(id)}
-                  className={`inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm font-semibold transition ${
-                    active
-                      ? 'bg-[#4ade80] text-[#0a0a0a]'
-                      : 'bg-[#161616] text-[#e8e8e8] hover:bg-[#1f1f1f]'
-                  }`}
-                  aria-current={active ? 'page' : undefined}
-                >
-                  <Icon aria-hidden="true" size={17} />
-                  {label}
-                </button>
-              );
-            })}
+  return (
+    <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0a0a0a]/80 backdrop-blur-md">
+      <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-4 sm:flex-row sm:px-6 lg:px-8">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded bg-[#4ade80] font-serif text-xl font-black text-[#0a0a0a]">
+            E
           </div>
+          <h1 className="font-serif text-2xl font-bold tracking-tight text-[#e8e8e8]">ElectionEdu</h1>
+        </div>
+        <nav className="scrollbar-thin flex max-w-full gap-1 overflow-x-auto pb-2 sm:pb-0" aria-label="Main navigation">
+          {tabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => handleTabChange(tab.id)}
+                className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold transition ${
+                  isActive ? 'bg-[#161616] text-[#4ade80]' : 'text-[#888] hover:bg-[#111] hover:text-[#cfcfcf]'
+                }`}
+                aria-current={isActive ? 'page' : undefined}
+              >
+                <Icon size={18} aria-hidden="true" />
+                {tab.label}
+              </button>
+            );
+          })}
         </nav>
       </div>
     </header>
   );
 }
+
+Header.propTypes = {
+  activeTab: PropTypes.string.isRequired,
+  onTabChange: PropTypes.func.isRequired,
+};

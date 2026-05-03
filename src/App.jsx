@@ -1,15 +1,19 @@
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { Award, CheckCircle2, MessageCircleQuestion } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import Chat from './components/Chat';
-import Glossary from './components/Glossary';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import Header from './components/Header';
-import JourneyMap from './components/JourneyMap';
-import Quiz from './components/Quiz';
-import Timeline from './components/Timeline';
-import { auth, db } from './firebase';
+import { auth, db, trackEvent } from './firebase';
 import { journeySteps } from './data/journeySteps';
+import { createSessionId } from './session';
+import { tagMessage } from './utils/tagger';
+
+// Lazy load components for efficiency
+const Chat = React.lazy(() => import('./components/Chat'));
+const Glossary = React.lazy(() => import('./components/Glossary'));
+const JourneyMap = React.lazy(() => import('./components/JourneyMap'));
+const Quiz = React.lazy(() => import('./components/Quiz'));
+const Timeline = React.lazy(() => import('./components/Timeline'));
 
 const WELCOME_MESSAGE = {
   role: 'assistant',
@@ -18,10 +22,9 @@ const WELCOME_MESSAGE = {
   kind: 'welcome',
 };
 
-function createSessionId() {
-  return `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
+/**
+ * Main Application Component.
+ */
 export default function App() {
   const [activeTab, setActiveTab] = useState('chat');
   const [user, setUser] = useState(null);
@@ -70,8 +73,9 @@ export default function App() {
         if (active && scoresSnap.exists()) {
           setQuizScores(Array.isArray(scoresSnap.data().scores) ? scoresSnap.data().scores : []);
         }
-      } catch {
+      } catch (err) {
         if (active) {
+          console.error('Session load error:', err);
           setStatus('Cloud data is unavailable right now. The interface is still ready for local exploration.');
         }
       } finally {
@@ -87,6 +91,9 @@ export default function App() {
     };
   }, [user?.uid]);
 
+  /**
+   * Updates the user's session in Firestore.
+   */
   async function updateSession(patch) {
     if (!user?.uid) {
       return;
@@ -97,7 +104,8 @@ export default function App() {
         ...patch,
         updatedAt: serverTimestamp(),
       }, { merge: true });
-    } catch {
+    } catch (err) {
+      console.error('Session update error:', err);
       window.setTimeout(() => {
         setDoc(doc(db, 'sessions', user.uid), {
           ...patch,
@@ -107,6 +115,9 @@ export default function App() {
     }
   }
 
+  /**
+   * Saves the user profile.
+   */
   async function saveProfile(nextProfile) {
     const normalizedProfile = normalizeProfile(nextProfile);
     setProfile(normalizedProfile);
@@ -117,42 +128,85 @@ export default function App() {
     });
   }
 
+  /**
+   * Sets messages and triggers persistence.
+   */
   async function saveMessages(nextMessages) {
     setMessages(nextMessages);
     await saveChatMessages(nextMessages);
   }
 
+  /**
+   * Persists chat messages and logs analytics.
+   */
   async function saveChatMessages(nextMessages) {
     if (!user?.uid) {
       return;
     }
 
-    const write = () => setDoc(doc(db, 'sessions', user.uid, 'chats', sessionIdRef.current), {
-      sessionId: sessionIdRef.current,
-      messages: nextMessages,
-      updatedAt: serverTimestamp(),
-      createdAt: nextMessages[0]?.createdAt || Date.now(),
-    }, { merge: true });
+    const userMessages = nextMessages.filter((m) => m.role === 'user');
+    const lastUserMessage = userMessages[userMessages.length - 1];
+    const topicTags = [...new Set(userMessages.map((m) => tagMessage(m.content)))];
+
+    if (lastUserMessage) {
+      trackEvent('chat_message_sent', {
+        topic: tagMessage(lastUserMessage.content),
+        message_count: userMessages.length
+      });
+    }
+
+    const write = async () => {
+      const taggedMessages = nextMessages.map((m) =>
+        m.role === 'user' ? { ...m, tag: tagMessage(m.content) } : m
+      );
+
+      await setDoc(doc(db, 'sessions', user.uid, 'chats', sessionIdRef.current), {
+        sessionId: sessionIdRef.current,
+        messages: taggedMessages,
+        updatedAt: serverTimestamp(),
+        createdAt: nextMessages[0]?.createdAt || Date.now(),
+      }, { merge: true });
+
+      await setDoc(doc(db, 'analytics', 'sessions', 'history', `${sessionIdRef.current}-${user.uid}`), {
+        sessionId: sessionIdRef.current,
+        anonymousUID: user.uid,
+        messageCount: userMessages.length,
+        topicTags,
+        timestamp: serverTimestamp(),
+      });
+    };
 
     try {
       await write();
-    } catch {
+    } catch (err) {
+      console.error('Firestore sync error:', err);
       window.setTimeout(() => {
         write().catch(() => {});
       }, 2000);
     }
   }
 
+  /**
+   * Clears the current chat session.
+   */
   function startFreshChatSession() {
     sessionIdRef.current = createSessionId();
     setMessages([{ ...WELCOME_MESSAGE, createdAt: Date.now() }]);
   }
 
+  /**
+   * Toggles a journey step as learned.
+   */
   async function toggleLearnedStep(stepId) {
     const nextSteps = learnedSteps.includes(stepId)
       ? learnedSteps.filter((item) => item !== stepId)
       : [...learnedSteps, stepId];
     setLearnedSteps(nextSteps);
+    
+    if (!learnedSteps.includes(stepId)) {
+      trackEvent('journey_step_learned', { step_id: stepId });
+    }
+    
     await updateSession({ profile, learnedSteps: nextSteps });
   }
 
@@ -171,46 +225,40 @@ export default function App() {
     return { bestScore, totalMessages, learnedCount, motivation };
   }, [learnedSteps.length, messages, quizScores]);
 
+  /**
+   * Renders the active tab with Suspense.
+   */
   function renderTab() {
-    if (activeTab === 'chat') {
-      return (
-        <Chat
-          user={user}
-          profile={profile}
-          messages={messages}
-          onSaveProfile={saveProfile}
-          onSaveMessages={saveMessages}
-          onClearChat={startFreshChatSession}
-          loading={!authReady || sessionLoading}
-        />
-      );
-    }
-
-    if (activeTab === 'journey') {
-      return <JourneyMap learnedSteps={learnedSteps} onToggleStep={toggleLearnedStep} loading={sessionLoading} />;
-    }
-
-    if (activeTab === 'timeline') {
-      return <Timeline />;
-    }
-
-    if (activeTab === 'glossary') {
-      return <Glossary />;
-    }
-
-    if (activeTab === 'quiz') {
-      return <Quiz user={user} profile={profile} />;
-    }
-
-    return <Dashboard data={dashboard} loading={sessionLoading} />;
+    return (
+      <Suspense fallback={<SkeletonLoader />}>
+        {activeTab === 'chat' && (
+          <Chat
+            user={user}
+            profile={profile}
+            messages={messages}
+            onSaveProfile={saveProfile}
+            onSaveMessages={saveMessages}
+            onClearChat={startFreshChatSession}
+            loading={!authReady || sessionLoading}
+          />
+        )}
+        {activeTab === 'journey' && (
+          <JourneyMap learnedSteps={learnedSteps} onToggleStep={toggleLearnedStep} loading={sessionLoading} />
+        )}
+        {activeTab === 'timeline' && <Timeline />}
+        {activeTab === 'glossary' && <Glossary />}
+        {activeTab === 'quiz' && <Quiz user={user} profile={profile} />}
+        {activeTab === 'dashboard' && <Dashboard data={dashboard} loading={sessionLoading} />}
+      </Suspense>
+    );
   }
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-[#e8e8e8]">
       <Header activeTab={activeTab} onTabChange={setActiveTab} />
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+      <main id="main-content" className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 focus:outline-none" tabIndex="-1">
         {status ? (
-          <div className="mb-4 rounded-md bg-[#161616] p-3 text-sm leading-6 text-[#888] ring-1 ring-white/10">
+          <div className="mb-4 rounded-md bg-[#161616] p-3 text-sm leading-6 text-[#888] ring-1 ring-white/10" role="alert">
             {status}
           </div>
         ) : null}
@@ -258,11 +306,15 @@ function Dashboard({ data, loading }) {
           </article>
         ))}
       </div>
-      {data.learnedCount === 0 && data.totalMessages === 0 && data.bestScore === 0 ? (
-        <div className="mt-4 rounded-lg bg-[#111] p-5 text-sm leading-6 text-[#888] ring-1 ring-white/10">
-          No saved activity yet. Complete onboarding, ask one question, or mark a journey step as learned to populate this dashboard.
-        </div>
-      ) : null}
     </section>
+  );
+}
+
+function SkeletonLoader() {
+  return (
+    <div className="space-y-6">
+      <div className="h-10 w-48 animate-pulse rounded bg-[#111]" />
+      <div className="h-96 w-full animate-pulse rounded-lg bg-[#111] ring-1 ring-white/10" />
+    </div>
   );
 }

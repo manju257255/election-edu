@@ -1,15 +1,24 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="ElectionEdu teaches the Indian election process with guided learning, civic glossary, quiz practice, and a personalized assistant." />
-    <title>ElectionEdu</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <title>ElectionEdu — Indian Election Literacy</title>
+    <meta name="description" content="Personalized election assistant for understanding the Indian election process." />
+    <meta http-equiv="Content-Security-Policy" 
+      content="default-src 'self'; 
+               script-src 'self' 'unsafe-inline' https://www.gstatic.com; 
+               connect-src 'self' https://generativelanguage.googleapis.com 
+                           https://firestore.googleapis.com 
+                           https://translation.googleapis.com
+                           https://identitytoolkit.googleapis.com
+                           https://www.google-analytics.com;
+               style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+               font-src https://fonts.gstatic.com;">
   </head>
   <body>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

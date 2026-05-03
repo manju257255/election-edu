@@ -1,69 +1,82 @@
 # ElectionEdu
 
-ElectionEdu is a React + Vite single page app for learning the Indian election process. It includes a personalized election assistant, journey map, timeline, searchable glossary, generated quiz, document upload, anonymous Firebase persistence, and Firebase Hosting configuration.
+ElectionEdu is a high-performance React + Vite single page app designed to improve Indian election literacy through AI-driven personalization, interactive journey maps, and real-time assessments.
 
-## Prerequisites
+## Architecture
 
-1. Node 18 or newer
-2. Firebase CLI
-3. A Firebase project with Anonymous Auth, Firestore, Storage, and Hosting enabled
-4. A Gemini API key
+```text
+[ Browser / Frontend ]
+       |
+       +-- [ React Components ] -- [ Error Boundary ]
+       |          |
+       |          +-- [ State Management (Hooks) ]
+       |          +-- [ Utils: Sanitize, Tag, Translate ]
+       |
+       +-- [ Google Services ]
+       |          |
+       |          +-- [ Gemini 2.0 Flash API (via fetch) ]
+       |          +-- [ Google Translate API ]
+       |          +-- [ Firebase Analytics (GA4) ]
+       |
+       +-- [ Firebase Backend ]
+                  |
+                  +-- [ Firestore (Sessions, Analytics, Quiz Scores) ]
+                  +-- [ Firebase Auth (Anonymous) ]
+                  +-- [ Firebase Storage (Document Uploads) ]
+```
 
-## Install
+## Google Services Used
 
+- **Gemini 2.0 Flash API**: Powers the personalized election assistant.
+- **Google Translate API**: Provides real-time translation of assistant responses to Hindi.
+- **Firebase Analytics (GA4)**: Tracks user engagement events (chat topics, quiz completion, etc.).
+- **Firebase Auth**: Enables anonymous user sessions for data persistence.
+- **Firestore**: Scalable NoSQL database for session and analytics storage.
+- **Firebase Hosting**: Fast and secure global hosting.
+
+## Key Features
+
+### Accessibility Statement
+ElectionEdu is built with accessibility as a priority:
+- Full keyboard navigation support with `:focus-visible` styles.
+- ARIA live regions for dynamic chat updates.
+- Skip navigation link for screen reader efficiency.
+- Semantic HTML5 structure and descriptive labels.
+- Sufficient color contrast for readability.
+
+### Security
+- **Content Security Policy (CSP)**: Strict policy enforced via meta tags to prevent XSS and unauthorized connections.
+- **Input Sanitization**: All user inputs are stripped of HTML tags and trimmed.
+- **Rate Limiting**: Session-based message limits to prevent API abuse.
+- **Firestore Security Rules**: Strict per-user data isolation.
+
+### Efficiency
+- **Lazy Loading**: Route-based code splitting using `React.lazy` and `Suspense`.
+- **Memoization**: Expensive computations and pure components are memoized with `useMemo` and `React.memo`.
+- **Lightweight Dependencies**: Direct `fetch` calls used for Google APIs to reduce bundle size.
+
+## Development
+
+### Install
 ```bash
 npm install
 ```
 
-## Environment
-
-Create a `.env` file in the project root:
-
+### Environment
+Create a `.env` file with your API keys:
 ```bash
-VITE_GEMINI_API_KEY=your_key_here
-VITE_GEMINI_MODEL=gemini-2.5-flash
+VITE_GEMINI_API_KEY=your_key
+VITE_TRANSLATE_API_KEY=your_key
 ```
 
-If Google returns a quota error, use an API key from a Google Cloud project with available Gemini quota or enable billing for that project. After changing `.env`, rebuild before deploying because Vite embeds `VITE_*` values during build.
-
-## Firebase Setup
-
-1. Go to [console.firebase.google.com](https://console.firebase.google.com).
-2. Create a project or open an existing project.
-3. Enable Authentication, then enable Anonymous sign-in.
-4. Create a Firestore database.
-5. Enable Firebase Storage.
-6. Register a web app and copy the Firebase config.
-7. Replace the placeholder config in `src/firebase.js`.
-8. Update `.firebaserc` so `your-project-id` matches your Firebase project ID.
-9. Deploy Firestore and Storage rules when deploying the app.
-
-Firestore rules included in this project allow read and write only when `request.auth != null`, so anonymous users are covered after sign-in.
-
-## Local Development
-
+### Testing
+We use Vitest for comprehensive unit testing.
 ```bash
-npm run dev
+npm test
 ```
 
-Vite will print a local URL, usually `http://localhost:5173`.
-
-## Production Build and Deploy
-
+### Build & Deploy
 ```bash
 npm run build
 firebase deploy
 ```
-
-The live URL will be:
-
-```text
-https://your-project-id.web.app
-```
-
-## Data Model
-
-1. `sessions/{anonymousUID}` stores onboarding answers, journey progress, and update timestamps.
-2. `sessions/{anonymousUID}/chats/{sessionId}` stores each fresh visit chat with `sessionId`, `messages`, and timestamps. Previous chats are kept for records but are never loaded back into the chat UI.
-3. `quizScores/{anonymousUID}` stores `bestScore` and a `scores` history array with `score`, `total`, `state`, `learningGoal`, and timestamp.
-4. Firebase Storage stores uploaded documents at `uploads/{anonymousUID}/{timestamp}-{filename}`.

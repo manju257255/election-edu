@@ -98,3 +98,11 @@ export function parseQuizQuestions(text) {
 
   return fallbackQuizQuestions;
 }
+
+export function calculateQuizScore(answers) {
+  if (!Array.isArray(answers)) {
+    return 0;
+  }
+
+  return answers.reduce((score, answer) => score + (answer?.correct ? 1 : 0), 0);
+}
