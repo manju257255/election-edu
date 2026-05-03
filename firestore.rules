@@ -1,18 +1,24 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Rate limit rule: Rate limiting (e.g., max 20 messages) should be enforced in client and backend logic
+    
     // Allow users to read and write their own session data
-    match /sessions/{userId}/{document=**} {
+    match /sessions/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      match /chats/{chatId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
     }
     
     // Allow users to read and write their own quiz scores
-    match /quizScores/{userId}/{document=**} {
+    match /quizScores/{userId} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     
     // Allow all authenticated users to write to analytics
-    match /analytics/{document=**} {
+    match /analytics/sessions/history/{docId} {
       allow read, write: if request.auth != null;
     }
   }

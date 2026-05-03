@@ -5,21 +5,46 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ElectionEdu — Indian Election Literacy</title>
-    <meta name="description" content="Personalized election assistant for understanding the Indian election process." />
-    <meta http-equiv="Content-Security-Policy" 
-      content="default-src 'self'; 
-               script-src 'self' 'unsafe-inline' https://www.gstatic.com; 
-               connect-src 'self' https://generativelanguage.googleapis.com 
-                           https://firestore.googleapis.com 
-                           https://translation.googleapis.com
-                           https://identitytoolkit.googleapis.com
-                           https://www.google-analytics.com;
-               style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-               font-src https://fonts.gstatic.com;">
+    <meta name="description" content="ElectionEdu — Learn the Indian election process with an AI assistant. Voter registration, EVMs, VVPAT, NOTA explained simply.">
+    <meta name="theme-color" content="#0a0a0a">
+    <link rel="preconnect" href="https://generativelanguage.googleapis.com">
+    <link rel="preconnect" href="https://firestore.googleapis.com">
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+    <meta http-equiv="Content-Security-Policy" content="
+      default-src 'self';
+      script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.gstatic.com https://www.googletagmanager.com;
+      connect-src 'self'
+        https://*.googleapis.com
+        https://*.firebaseio.com
+        https://*.firebaseapp.com
+        https://firestore.googleapis.com
+        https://firebase.googleapis.com
+        https://firebaseinstallations.googleapis.com
+        https://securetoken.googleapis.com
+        https://identitytoolkit.googleapis.com
+        https://generativelanguage.googleapis.com
+        https://translation.googleapis.com
+        https://www.google-analytics.com
+        https://analytics.google.com;
+      style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+      font-src https://fonts.gstatic.com data:;
+      script-src-elem 'self' 'unsafe-inline' https://www.gstatic.com https://www.googletagmanager.com;
+      img-src 'self' data: https:;
+      worker-src 'self' blob:;
+    ">
   </head>
   <body>
     <a href="#main-content" class="skip-link">Skip to main content</a>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js').catch(err => {
+            console.error('SW registration failed:', err);
+          });
+        });
+      }
+    </script>
   </body>
 </html>

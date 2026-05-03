@@ -9,10 +9,10 @@ const firebaseConfig = {
   apiKey: '_',
   authDomain: '_',
   projectId: '_',
-  storageBucket: "_",
-  messagingSenderId: "_",
-  appId: "_",
-  measurementId: "_"
+  storageBucket: '_',
+  messagingSenderId: '_',
+  appId: '_',
+  measurementId: '_'
 };
 
 export const app = initializeApp(firebaseConfig);

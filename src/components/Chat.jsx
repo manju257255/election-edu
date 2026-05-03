@@ -1,7 +1,7 @@
-import { FileUp, Languages, Send, Trash2 } from 'lucide-react';
+import { FileUp, Languages, Send, Trash2, WifiOff } from 'lucide-react';
 import { ref, uploadBytes } from 'firebase/storage';
 import PropTypes from 'prop-types';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { storage, trackEvent } from '../firebase';
 import { askGemini, MAX_USER_MESSAGES_PER_SESSION } from '../gemini';
 import { sanitizeChatInput } from '../utils/sanitize';
@@ -19,12 +19,14 @@ const goals = ['Voter Registration', 'How EVMs work', 'Understanding results', '
 
 /**
  * Chat component for interacting with the election assistant.
+ * Optimized with message virtualization and offline detection.
  */
-export default function Chat({ user, profile, messages, onSaveProfile, onSaveMessages, onClearChat, loading }) {
+function Chat({ user, profile, messages, onSaveProfile, onSaveMessages, onClearChat, loading }) {
   const [draft, setDraft] = useState('');
   const [pending, setPending] = useState(false);
   const [uploadStatus, setUploadStatus] = useState('');
-  const [lang, setLang] = useState('en'); // 'en' or 'hi'
+  const [lang, setLang] = useState('en');
+  const [isOffline, setIsOffline] = useState(!navigator.onLine);
   const [onboarding, setOnboarding] = useState({
     isFirstTime: true,
     state: 'Maharashtra',
@@ -32,9 +34,23 @@ export default function Chat({ user, profile, messages, onSaveProfile, onSaveMes
   });
   const endRef = useRef(null);
 
+  // Virtualization: Only render the last 50 messages to keep the DOM light
+  const visibleMessages = useMemo(() => messages.slice(-50), [messages]);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, pending]);
+  }, [visibleMessages, pending]);
 
   async function submitOnboarding(event) {
     event.preventDefault();
@@ -43,11 +59,11 @@ export default function Chat({ user, profile, messages, onSaveProfile, onSaveMes
 
   async function sendMessage(contentOverride) {
     const content = sanitizeChatInput(contentOverride || draft);
-    if (!content || pending || !profile) {
+    if (!content || pending || !profile || isOffline) {
       return;
     }
 
-    const currentUserMessageCount = messages.filter((message) => message.role === 'user').length;
+    const currentUserMessageCount = messages.filter((m) => m.role === 'user').length;
     if (currentUserMessageCount >= MAX_USER_MESSAGES_PER_SESSION) {
       const limitMessage = {
         role: 'assistant',
@@ -67,8 +83,8 @@ export default function Chat({ user, profile, messages, onSaveProfile, onSaveMes
 
     try {
       const history = nextMessages
-        .filter((message) => !message.error && message.kind !== 'welcome')
-        .map(({ role, content: messageContent }) => ({ role, content: messageContent }));
+        .filter((m) => !m.error && m.kind !== 'welcome')
+        .map(({ role, content: msgContent }) => ({ role, content: msgContent }));
       
       let reply = await askGemini(history, profile);
       
@@ -137,29 +153,26 @@ export default function Chat({ user, profile, messages, onSaveProfile, onSaveMes
               ))}
             </div>
           </fieldset>
-
           <label className="grid gap-2 text-sm font-semibold text-[#e8e8e8]">
             Which state are you from?
             <select
               value={onboarding.state}
-              onChange={(event) => setOnboarding((prev) => ({ ...prev, state: event.target.value }))}
+              onChange={(e) => setOnboarding((p) => ({ ...p, state: e.target.value }))}
               className="h-11 rounded-md border border-white/10 bg-[#161616] px-3 text-[#e8e8e8]"
             >
-              {states.map((state) => <option key={state}>{state}</option>)}
+              {states.map((s) => <option key={s}>{s}</option>)}
             </select>
           </label>
-
           <label className="grid gap-2 text-sm font-semibold text-[#e8e8e8]">
             What do you want to learn?
             <select
               value={onboarding.goal}
-              onChange={(event) => setOnboarding((prev) => ({ ...prev, goal: event.target.value }))}
+              onChange={(e) => setOnboarding((p) => ({ ...p, goal: e.target.value }))}
               className="h-11 rounded-md border border-white/10 bg-[#161616] px-3 text-[#e8e8e8]"
             >
-              {goals.map((goal) => <option key={goal}>{goal}</option>)}
+              {goals.map((g) => <option key={g}>{g}</option>)}
             </select>
           </label>
-
           <button type="submit" className="h-11 rounded-md bg-[#4ade80] px-5 text-sm font-bold text-[#0a0a0a]">Start learning</button>
         </form>
       </section>
@@ -174,27 +187,24 @@ export default function Chat({ user, profile, messages, onSaveProfile, onSaveMes
           <p className="text-sm text-[#888]">{profile.state} / {profile.goal}</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {isOffline && (
+            <div className="flex items-center gap-2 rounded-md bg-red-500/10 px-3 py-1 text-xs font-bold text-red-500 ring-1 ring-red-500/20" role="alert">
+              <WifiOff size={14} /> Offline
+            </div>
+          )}
           <button
             type="button"
             onClick={() => setLang(l => l === 'en' ? 'hi' : 'en')}
             className={`inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm font-semibold ring-1 ring-white/10 ${lang === 'hi' ? 'bg-[#4ade80] text-[#0a0a0a]' : 'bg-[#1a1a1a] text-[#e8e8e8]'}`}
-            aria-label="Toggle language to Hindi"
           >
-            <Languages size={16} aria-hidden="true" />
+            <Languages size={16} />
             {lang === 'en' ? 'English' : 'Hindi'}
           </button>
-          <button
-            type="button"
-            onClick={onClearChat}
-            className="inline-flex h-10 items-center gap-2 rounded-md bg-[#1a1a1a] px-3 text-sm font-semibold text-[#e8e8e8] ring-1 ring-white/10"
-            aria-label="Clear chat session"
-          >
-            <Trash2 size={16} aria-hidden="true" />
-            Clear
+          <button type="button" onClick={onClearChat} className="inline-flex h-10 items-center gap-2 rounded-md bg-[#1a1a1a] px-3 text-sm font-semibold text-[#e8e8e8] ring-1 ring-white/10">
+            <Trash2 size={16} /> Clear
           </button>
           <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-md bg-[#1a1a1a] px-3 text-sm font-semibold text-[#e8e8e8] ring-1 ring-white/10">
-            <FileUp size={16} aria-hidden="true" />
-            Upload
+            <FileUp size={16} /> Upload
             <input type="file" className="sr-only" onChange={uploadDocument} />
           </label>
         </div>
@@ -202,53 +212,46 @@ export default function Chat({ user, profile, messages, onSaveProfile, onSaveMes
 
       <div className="scrollbar-thin overflow-y-auto p-4" aria-live="polite">
         <div className="space-y-4">
-          {messages.map((message, index) => (
-            <MessageGroup
-              key={`${message.createdAt}-${index}`}
-              message={message}
-              onSendSuggestion={sendMessage}
-              disabled={pending}
-            />
+          {visibleMessages.map((msg, i) => (
+            <MessageGroup key={`${msg.createdAt}-${i}`} message={msg} onSendSuggestion={sendMessage} disabled={pending || isOffline} />
           ))}
-          {pending ? (
+          {pending && (
             <div className="message-slide inline-flex rounded-lg bg-[#1a1a1a] px-4 py-3">
               <span className="typing-dot mx-1 h-2 w-2 rounded-full bg-[#4ade80]" />
               <span className="typing-dot mx-1 h-2 w-2 rounded-full bg-[#4ade80]" />
               <span className="typing-dot mx-1 h-2 w-2 rounded-full bg-[#4ade80]" />
             </div>
-          ) : null}
+          )}
           <div ref={endRef} />
         </div>
       </div>
 
       <div className="border-t border-white/10 p-4">
-        {uploadStatus ? <p className="mb-2 text-sm text-[#888]" role="status">{uploadStatus}</p> : null}
+        {uploadStatus && <p className="mb-2 text-sm text-[#888]" role="status">{uploadStatus}</p>}
+        {isOffline && <p className="mb-2 text-sm font-bold text-red-500">You are offline. Reconnect to send messages.</p>}
         <div className="relative flex flex-col gap-2">
           <div className="flex gap-2">
-            <label className="sr-only" htmlFor="chat-input">Type your question</label>
             <textarea
               id="chat-input"
               value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              onChange={(e) => setDraft(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask about voter registration, EVMs, NOTA, counting, MCC..."
+              placeholder={isOffline ? "Cannot send messages while offline" : "Ask about voter registration, EVMs, NOTA..."}
               rows={2}
               maxLength={500}
-              className="max-h-36 min-h-12 flex-1 resize-y rounded-md border border-white/10 bg-[#161616] p-3 text-sm leading-6 text-[#e8e8e8] placeholder:text-[#888]"
+              disabled={isOffline}
+              className="max-h-36 min-h-12 flex-1 resize-y rounded-md border border-white/10 bg-[#161616] p-3 text-sm leading-6 text-[#e8e8e8] placeholder:text-[#888] disabled:opacity-50"
             />
             <button
               type="button"
               onClick={() => sendMessage()}
-              disabled={pending || !draft.trim()}
+              disabled={pending || !draft.trim() || isOffline}
               className="grid h-12 w-12 shrink-0 place-items-center rounded-md bg-[#4ade80] text-[#0a0a0a] disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label="Send message"
             >
-              <Send size={18} aria-hidden="true" />
+              <Send size={18} />
             </button>
           </div>
-          <div className="text-right text-[10px] text-[#666]">
-            {draft.length}/500
-          </div>
+          <div className="text-right text-[10px] text-[#666]">{draft.length}/500</div>
         </div>
       </div>
     </section>
@@ -265,74 +268,29 @@ Chat.propTypes = {
   loading: PropTypes.bool,
 };
 
+const MemoizedChat = React.memo(Chat);
+export default MemoizedChat;
+
 function MessageGroup({ message, onSendSuggestion, disabled }) {
   const { body, suggestion } = splitSuggestion(message.content);
   const isUser = message.role === 'user';
-
   return (
     <article className={`message-slide flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
-      <div
-        className={`max-w-[88%] whitespace-pre-wrap rounded-lg px-4 py-3 text-sm leading-6 sm:max-w-[75%] ${
-          isUser
-            ? 'bg-[#4ade80] text-[#0a0a0a]'
-            : message.error
-              ? 'border border-red-500/35 bg-[#1a1a1a] text-[#e8e8e8]'
-              : 'bg-[#1a1a1a] text-[#e8e8e8]'
-        }`}
-      >
+      <div className={`max-w-[88%] whitespace-pre-wrap rounded-lg px-4 py-3 text-sm leading-6 sm:max-w-[75%] ${isUser ? 'bg-[#4ade80] text-[#0a0a0a]' : 'bg-[#1a1a1a] text-[#e8e8e8]'}`}>
         {body}
       </div>
-      <span className="mt-1 text-xs text-[#666]">{formatRelativeTime(message.createdAt)}</span>
-      {!isUser && suggestion ? (
-        <button
-          type="button"
-          onClick={() => onSendSuggestion(suggestion)}
-          disabled={disabled}
-          className="mt-2 max-w-[88%] rounded-full bg-[#161616] px-3 py-2 text-left text-xs font-semibold text-[#4ade80] ring-1 ring-[#4ade80]/30 transition hover:bg-[#1a1a1a] disabled:cursor-not-allowed disabled:opacity-50 sm:max-w-[75%]"
-        >
+      <span className="mt-1 text-xs text-[#666]">{new Date(message.createdAt).toLocaleTimeString()}</span>
+      {!isUser && suggestion && (
+        <button type="button" onClick={() => onSendSuggestion(suggestion)} disabled={disabled} className="mt-2 rounded-full bg-[#161616] px-3 py-2 text-xs font-semibold text-[#4ade80] ring-1 ring-[#4ade80]/30 hover:bg-[#1a1a1a] disabled:opacity-50">
           Next: {suggestion}
         </button>
-      ) : null}
+      )}
     </article>
   );
 }
 
-MessageGroup.propTypes = {
-  message: PropTypes.object.isRequired,
-  onSendSuggestion: PropTypes.func.isRequired,
-  disabled: PropTypes.bool,
-};
-
 function splitSuggestion(content) {
   const match = content.match(/\s*Next:\s*([\s\S]+?)\s*$/);
-
-  if (!match) {
-    return { body: content, suggestion: '' };
-  }
-
-  return {
-    body: content.slice(0, match.index).trim(),
-    suggestion: match[1].trim(),
-  };
-}
-
-function formatRelativeTime(value) {
-  const createdAt = Number(value) || Date.now();
-  const seconds = Math.max(0, Math.floor((Date.now() - createdAt) / 1000));
-
-  if (seconds < 60) {
-    return 'Just now';
-  }
-
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) {
-    return `${minutes} min ago`;
-  }
-
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) {
-    return `${hours} hr ago`;
-  }
-
-  return new Date(createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  if (!match) return { body: content, suggestion: '' };
+  return { body: content.slice(0, match.index).trim(), suggestion: match[1].trim() };
 }

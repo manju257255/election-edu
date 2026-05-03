@@ -1,5 +1,6 @@
 import { BarChart3, BookOpen, Calendar, Layout, Map, MessageSquare } from 'lucide-react';
 import PropTypes from 'prop-types';
+import React from 'react';
 import { trackEvent } from '../firebase';
 
 const tabs = [
@@ -12,9 +13,9 @@ const tabs = [
 ];
 
 /**
- * Header component with navigation tabs.
+ * Header component with navigation tabs. Memoized for performance.
  */
-export default function Header({ activeTab, onTabChange }) {
+function Header({ activeTab, onTabChange }) {
   const handleTabChange = (tabId) => {
     onTabChange(tabId);
     trackEvent('tab_switched', { tab_id: tabId });
@@ -58,3 +59,6 @@ Header.propTypes = {
   activeTab: PropTypes.string.isRequired,
   onTabChange: PropTypes.func.isRequired,
 };
+
+const MemoizedHeader = React.memo(Header);
+export default MemoizedHeader;

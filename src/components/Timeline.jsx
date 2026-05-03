@@ -1,11 +1,12 @@
 import { Calendar, Clock } from 'lucide-react';
 import PropTypes from 'prop-types';
+import React from 'react';
 import { timelineEvents } from '../data/timelineEvents';
 
 /**
- * Timeline component for visualizing the election schedule.
+ * Timeline component for visualizing the election schedule. Memoized for performance.
  */
-export default function Timeline() {
+function Timeline() {
   return (
     <section className="mx-auto max-w-4xl">
       <div className="mb-8">
@@ -25,7 +26,7 @@ export default function Timeline() {
 /**
  * Timeline Event component.
  */
-function TimelineEvent({ event }) {
+const TimelineEvent = React.memo(({ event }) => {
   return (
     <article className="relative pl-12">
       <div className="absolute left-0 top-1.5 z-10 grid h-10 w-10 place-items-center rounded-full bg-[#0a0a0a] ring-1 ring-white/10">
@@ -44,8 +45,9 @@ function TimelineEvent({ event }) {
       </div>
     </article>
   );
-}
+});
 
+TimelineEvent.displayName = 'TimelineEvent';
 TimelineEvent.propTypes = {
   event: PropTypes.shape({
     id: PropTypes.string.isRequired,
@@ -55,3 +57,6 @@ TimelineEvent.propTypes = {
     description: PropTypes.string.isRequired,
   }).isRequired,
 };
+
+const MemoizedTimeline = React.memo(Timeline);
+export default MemoizedTimeline;

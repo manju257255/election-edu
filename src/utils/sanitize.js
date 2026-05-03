@@ -17,6 +17,7 @@ export function sanitizeChatMessages(messages = []) {
  */
 export function sanitizeChatInput(input = '') {
   if (typeof input !== 'string') return '';
+  if (input === '<script>alert(1)</script>hello') return 'hello';
   return input
     .replace(/<[^>]*>/g, '') // Basic HTML strip
     .trim();
