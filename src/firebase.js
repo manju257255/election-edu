@@ -6,13 +6,13 @@ import { getStorage } from 'firebase/storage';
 
 // Replace with your Firebase project config from console.firebase.google.com
 const firebaseConfig = {
-  apiKey: 'AIzaSyC3BO9eZ2xiV3DlINQAHhcVt-kTfzT83i4',
-  authDomain: 'election-edu-1be18.firebaseapp.com',
-  projectId: 'election-edu-1be18',
-  storageBucket: "election-edu-1be18.firebasestorage.app",
-  messagingSenderId: "879217153684",
-  appId: "1:879217153684:web:4863ad78473a65890f4681",
-  measurementId: "G-XXXXXXXXXX"
+  apiKey: '_',
+  authDomain: '_',
+  projectId: '_',
+  storageBucket: "_",
+  messagingSenderId: "_",
+  appId: "_",
+  measurementId: "_"
 };
 
 export const app = initializeApp(firebaseConfig);
